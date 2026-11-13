@@ -1,0 +1,16 @@
+question_id;user_question;analysis_type
+Q01;Which competitor has the lowest current Growth plan price?;pricing
+Q02;Which competitors increased Enterprise pricing most since January 2025?;pricing trends
+Q03;Which promotions are still active as of November 11, 2026?;promotions
+Q04;Which vendors have the strongest AI strategy?;strategic intelligence
+Q05;Are there verified security breaches among the competitors?;source conflict
+Q06;What changed in the last 90 days?;temporal intelligence
+Q07;Who has the best value for a 50-seat Growth deployment?;total cost
+Q08;Which competitor is expanding internationally?;market expansion
+Q09;Which vendor is most vulnerable to customer churn?;risk synthesis
+Q10;Summarize major changes at NexaFlow with citations.;company briefing
+Q11;What was OrbitDesk Growth pricing in September 2025?;historical point in time
+Q12;What is the difference between announced AI capabilities and generally available features?;verification
+Q13;What discounts have expired, and which is the biggest historical offer?;promotion history
+Q14;Which claims should a human analyst verify before publishing?;evidence quality
+Q15;What are the top 3 competitive threats for PulseGrid?;competitive threats

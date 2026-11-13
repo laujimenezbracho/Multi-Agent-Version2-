@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "competitive-intelligence-agents"
+version = "0.1.0"
+description = "Controlled competitive intelligence agent experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai-agents",
+    "openai",
+    "pydantic>=2",
+    "pandas",
+    "reportlab>=4,<6",
+    "python-dotenv",
+    "pytest",
+    "pytest-mock",
+]
+
+[project.optional-dependencies]
+test = ["pymupdf>=1.24"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+ci_agents = ["prompts/*.md"]
