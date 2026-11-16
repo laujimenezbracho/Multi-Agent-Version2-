@@ -196,7 +196,8 @@ def test_metadata_only_context_and_no_private_file_access(sdk, monkeypatch):
     monkeypatch.setattr(Path, "open", guarded)
     call()
     context = json.loads(sdk.call_args.kwargs["input"])
-    assert set(context) == {"original_question", "as_of", "companies", "evidence_categories"}
+    assert set(context) == {"original_question", "as_of", "companies", "evidence_categories", "scope_contract"}
+    assert context['scope_contract']['kind']=='published_list_price'
     assert context["companies"] == COMPANIES
     assert "Pricing" in context["evidence_categories"]
     assert "record_id" not in sdk.call_args.kwargs["input"]

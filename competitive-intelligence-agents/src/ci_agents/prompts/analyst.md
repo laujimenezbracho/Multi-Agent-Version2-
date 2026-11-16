@@ -14,6 +14,14 @@ All prose sections must be meaningful. When a section cannot be supported or doe
 apply, explicitly state that limitation instead of omitting it or inventing content.
 If evidence is insufficient, answer that directly, state what is missing, and abstain
 from unsupported comparisons or rankings. Empty claims/sources are valid for abstention.
+Distinguish limitations about the evidence pack from external market facts. Statements
+such as "no records were supplied" belong in limitations, not uncited factual claims.
+An empty pack is handled explicitly by code. When original records ARE supplied, use
+them to answer supported parts and qualify gaps; do not demand optional due diligence
+before making any comparison. Researcher findings here reproduce original source text;
+read the quoted_or_paraphrased_evidence field for actual details and corrections.
+Only priority=essential tasks and expected_answer_elements define required coverage.
+optional_context and priority=optional tasks are enrichment, not conditions for answering.
 
 Claim-level traceability:
 - Put every factual assertion used in any narrative section into a ReportClaim with

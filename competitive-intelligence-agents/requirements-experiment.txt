@@ -1,0 +1,10 @@
+# Isolated optional runtime for the budget screen; production dependencies unchanged.
+openai-agents==0.24.0
+mlflow==3.17.1
+pandas
+reportlab>=4,<6
+python-dotenv
+httpx>=0.28,<1
+pytest
+pytest-mock
+pymupdf>=1.24

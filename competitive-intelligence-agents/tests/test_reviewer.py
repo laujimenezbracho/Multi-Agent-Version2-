@@ -135,7 +135,8 @@ def test_mocked_material_semantic_failures_are_accepted(sdk, kind):
     if kind == "missing_required_information":
         report.competitor_comparison.clear()
     if kind == "weak_strategic_inference":
-        report.claims[0].claim_type = "inference"
+        from ci_agents.schemas import InferenceClaim
+        report.claims[0]=InferenceClaim(**{**report.claims[0].model_dump(),'claim_type':'inference'})
     output = review_for(plan, report, decision="FAIL", issues=[issue(kind)])
     sdk.return_value = SimpleNamespace(final_output=output)
     original_report = report.model_dump_json()

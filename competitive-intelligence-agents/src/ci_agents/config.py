@@ -28,6 +28,23 @@ class Settings:
     data_dir: Path
     runs_dir: Path
     evaluation_cutoff: datetime
+    reasoning_effort: str | None = None
+    max_output_tokens: int | None = None
+
+
+def agent_model_settings(settings, **kwargs):
+    """Optional, frozen controls; absent settings preserve production defaults."""
+    from agents import ModelSettings
+    from openai.types.shared import Reasoning
+    if settings.reasoning_effort is not None:
+        kwargs['reasoning'] = Reasoning(effort=settings.reasoning_effort)
+    if settings.max_output_tokens is not None:
+        kwargs['max_tokens'] = settings.max_output_tokens
+    from .workflow_runtime import active_runtime
+    runtime = active_runtime()
+    if runtime is not None:
+        kwargs['max_tokens'] = min(kwargs.get('max_tokens', runtime.policy.max_output_tokens), runtime.policy.max_output_tokens)
+    return ModelSettings(**kwargs)
 
 
 _runtime_settings: ContextVar[Settings | None] = ContextVar("ci_runtime_settings", default=None)

@@ -3,8 +3,17 @@
 Python 3.11+ implementation of the Multi-Agent Competitive Intelligence project through
 Task 10 plus additive V2 recovery. Version 1 executes Planner -> Researcher -> Analyst -> Reviewer -> STOP exactly
 once in order. Reviewer FAIL is a completed run with review failure, not an exception
-or a reason to retry. V2 is a separate bounded controller described below. The single-agent baseline,
-background execution, and independent evaluator remain unimplemented.
+or a reason to retry. V2 is a separate bounded controller described below. The single-agent baseline
+and background execution remain unimplemented. A native MLflow independent budget
+screen is documented in [BUDGET_SCREEN_README.md](BUDGET_SCREEN_README.md). Research,
+Analyst, Reviewer and grading fixes are described in
+[RELIABILITY_FIXES.md](RELIABILITY_FIXES.md).
+The six-question paired 8/16/32 request-threshold assignment, including its current
+execution status and reproduction commands, is documented in
+[BUDGET_THRESHOLD_EVALUATION_README.md](BUDGET_THRESHOLD_EVALUATION_README.md).
+The [16 November V2 code review](V2_CODE_REVIEW.md) records corrected handoff,
+temporal, accounting and reproducibility defects, remaining research limitations,
+and the pinned `requirements-research.lock` runtime.
 
 ## Windows PowerShell setup
 
@@ -689,3 +698,329 @@ and the layout scales content to fit; full original text remains in JSON.
 PDFs are presentation copies, outside the immutable experiment manifest.
 
 PDF text/page regression tests use PyMuPDF: `python -m pip install -e ".[test]"`.
+
+## Improved V2 runtime
+
+The V2 command now enables `v2_reliability.v1` by default. The fixed V1 entry point
+remains available separately; `v2 --legacy-policy` selects the earlier V2 behavior.
+The original experiment results are preserved and are not recomputed by this change.
+
+| Area | Implemented behavior |
+| --- | --- |
+| Structured output | At most one repair for malformed Planner, Analyst, Reviewer or requirement-assessment output. The original inputs and local validation feedback are reused. Valid Reviewer FAIL and provider/quota errors are not reasons to regenerate. |
+| Planning scope | Simple comparative list-price questions get a bounded pricing plan based on the original question and public company names. Extra model-proposed checkout/page-capture requirements become optional. Explicit extended scope such as fees, taxes or geography remains untouched; the original proposed plan is retained in the workflow audit. |
+| Reviewer contract | The provider schema enumerates issue types; context supplies allowed claim and record IDs. Existing identity, citation and PASS/FAIL validation remains mandatory. |
+| Numerical reasoning | Full retrieved pricing records carry their structured source observations. Decimal arithmetic groups matching units and computes seat/subscription baselines when the seat minimum is known and met. It does not select a canonical current price or invent unknown fees. |
+| Research | Round-robin discovery reads a full record for each company before spending calls on extra categories. A coverage ledger and validated per-requirement assessments guide further research. Invalid self-assessments get one repair, then become explicitly unassessed; verified full source records are preserved. |
+| Retrieval reuse | Identical successful operations reuse a session-local cache with the same corpus object and cutoff. Cache hits are logged separately and do not consume a new retrieval operation. Empty search results are cached too, encouraging reformulation. |
+| Context | Duplicate finding text and retrieval logs are omitted from model context; full evidence passages, caveats and metadata remain. Original EvidencePacks and audit logs remain in artifacts. No passage truncation or embedding index is introduced. |
+| Whole-run control | A shared runtime measures requests and returned tokens through SDK hooks across the initial pipeline, output repairs, recovery and re-review. Optional token, cost, request and elapsed-time limits gate further work. |
+| Recovery evaluation | `scripts/evaluate_v2_reliability.py` uses native MLflow datasets, registered independent judging, tracing, exact initial/final reports, semantic defect-change assessment and five controlled Reviewer cases. Recovery targets named competitors in the feedback when possible. |
+
+### Running with explicit limits
+
+From the project directory, preflight is offline:
+
+```powershell
+python -m ci_agents.cli v2 --question-id Q01 --run-id improved-q01 --initial-max-tool-calls 32 --max-total-tokens 250000 --max-model-requests 20 --max-seconds 240 --reserve-final-tokens 16000 --dry-run
+```
+
+Replace `--dry-run` with `--allow-api` for a live invocation. The example's allowances
+are operating safeguards, not independently validated optimal values. The production
+initial retrieval default remains 60; the recovery default remains 20. Setting 32 in
+this example is explicit and does not transfer the experimental threshold conclusion
+to production automatically.
+
+`--max-output-tokens` defaults to 8,000 for improved V2. A request allowance reserves
+two model requests for analysis/review during research. `--reserve-final-tokens`
+withholds the specified token headroom from research; it is zero unless configured.
+Those reserves are planning headroom, not guarantees that the final stages will fit.
+Paired continuation budgets cover newly executed calls; inherited baseline usage is
+reported separately and is not charged against the new-call allowance.
+
+A monetary limit additionally requires documented rates, for example
+`--max-estimated-cost 0.75 --input-usd-per-million 0.25 --output-usd-per-million 2
+--pricing-source https://developers.openai.com/api/docs/models/gpt-5-mini
+--pricing-date 2026-11-15`. Rates must match the configured model; recheck them when
+models/prices change. Existing pricing semantics conservatively use the supplied
+input rate for all input tokens, including cached input.
+
+Token and estimated-cost controls stop the next request using returned usage; an
+in-flight request can overshoot. Output token limits are sent to the provider, and
+the remaining wall-time allowance bounds an SDK invocation. A cancelled request can
+still have unknown billed usage. Unknown usage blocks further token/cost-budgeted
+work rather than being counted as free.
+
+`workflow_policy.json` and `workflow_budget.json` record the policy, limits, dispatch
+count, known usage, usage completeness, repair events and enforcement caveats.
+Budget failures retain partial artifacts and a specific `stop_reason` in error
+records. Initial and recovery snapshots remain separate and manifest-verified.
+Repair audits stay in the workflow ledger rather than the retrieval ledger, keeping
+EvidencePack provenance and baseline validation consistent. New improved runs record
+agent-code fingerprints; continuation checks them when available. Historical runs
+without those fingerprints cannot retrospectively prove source-code identity.
+
+### Reproducing the reliability pilot
+
+Use the isolated optional runtime in `requirements-experiment.txt`. Native MLflow
+stores private evaluation references; agent runtime calls receive public inputs only.
+The evaluator reuses the existing source-audited question keys. Use a new output
+directory after changing code, prompts, policy or evaluation settings.
+
+```powershell
+python scripts/evaluate_v2_reliability.py --output-dir runs/v2-reliability-next --key-dir evaluation_private/checkpoint_threshold_20261115_v2 --prepare-only
+python scripts/evaluate_v2_reliability.py --output-dir runs/v2-reliability-next --key-dir evaluation_private/checkpoint_threshold_20261115_v2 --allow-api
+```
+
+The first command discovers native datasets, reuses a matching frozen design when
+available, registers the independent scorer and verifies trace readback without
+model calls. Live execution includes Q01/Q15 once by default; `--repetitions 3`
+adds repeated trials, and `--questions` selects public questions with corresponding
+private keys. It does not generate missing private answer keys.
+
+Outputs include exact readable initial/final answers, `paired_summary.json`,
+`independent_grades.json`, `recovery_defect_changes.json`,
+`reviewer_challenge_summary.json`, native MLflow results/traces and actual model
+usage. Failed runs and invalid independent grades remain explicit. The five Reviewer
+cases cover a correct qualified historical observation, a wrong price, a wrong
+billing unit, an invented effective date, and an unsupported strategic inference.
+The summary records decision confusion counts and independent seeded-error checks;
+a FAIL about an unrelated issue is not sufficient detection credit. These are smoke
+checks, not calibrated production precision/recall. All semantic evaluations remain
+pending human adjudication.
+
+The pilot's resource headroom is recorded in its frozen experiment plan. These
+validation allowances are independent of the CLI example above and do not establish
+an optimal operating budget. A failed controller invocation is checkpointed as an
+execution failure so native evaluation can continue to the other planned cases.
+
+### Implementation validation — 15 November 2026
+
+The final offline suite passed **437 tests**, with **2 skipped**. It includes real
+SDK parsing with mocked provider responses, all four real wrappers through V2,
+repair-exhaustion fallback, exact retrieval-ledger/manifest compatibility, shared
+budget guards, balanced company coverage, numerical aids and price-scope controls.
+Offline fixtures establish behavior, not model accuracy. That live run's manifest
+and agent-code fingerprints were verified against the 15 November implementation.
+The later [code-review revision](V2_CODE_REVIEW.md) needs fresh run directories;
+the earlier empirical figures remain attached to their frozen source versions.
+
+The live work exposed and corrected several concrete defects: macOS `/private/tmp`
+was mistaken for private answer-key storage; strict coverage self-assessment failures
+discarded useful sources; category-first discovery missed a competitor; repair audit
+events polluted the retrieval ledger; and Planner overreach caused a false Reviewer
+rejection of an independently correct pricing answer. These fixes preserve source
+provenance and do not convert a valid FAIL into PASS automatically.
+
+| Check | Observed result | Scope of conclusion |
+| --- | --- | --- |
+| Latest Q01 scope-correction check | Completed with internal PASS; all five prices included; independently assessed supported essential coverage 100/100 with zero material defects; recovery skipped. Four workflow model requests, 28,564 tokens, estimated workflow cost USD0.01745025. | One question/repetition; provisional source-audited judgments pending human approval. Not a new retrieval-threshold study. |
+| Five controlled Reviewer cases | Accepted the correct qualified historical report and rejected the four seeded price/unit/date/strategy errors. All five reviews and independent challenge assessments were valid. | Tiny controlled smoke set; not production precision/recall. |
+| Preceding Q01/Q15 paired pilot | Both completed initial analysis and one bounded correction cycle. Q01 scored 100/100 before and after while its Reviewer still rejected optional due diligence; this motivated the final scope fix. | Shows execution and the false-rejection defect; does not demonstrate a quality gain from recovery. |
+| Q15 independent quality | Initial/final assessments failed citation-anchor validation; the paired defect-change assessment was also invalid. | Quality and recovery benefit remain unknown; invalid grades are not successes or zero-error answers. |
+
+Latest pricing check: [exact final answer](runs/v2_reliability_20261115_scoped/cases/Q01-r1/final.md),
+[paired summary](runs/v2_reliability_20261115_scoped/paired_summary.json),
+[Reviewer challenge results](runs/v2_reliability_20261115_scoped/reviewer_challenge_summary.json),
+and [actual usage](runs/v2_reliability_20261115_scoped/actual_usage.json).
+The preceding broader pilot is preserved under
+[`runs/v2_reliability_20261115_validated/`](runs/v2_reliability_20261115_validated/).
+These local run artifacts are Git-ignored.
+
+The latest scoped pilot's **known-response model estimate was USD0.1768825** across
+agent work, five Reviewer challenges and independent judging, with 18 request
+attempts and one failed request with unknown usage. All five implementation/live
+diagnostic runs together recorded **83 attempts, USD1.107336 in known-response
+estimates, and four unknown-usage failures**. These are not complete invoices and
+exclude prior threshold experiments. Earlier prepare/serialization attempts made no
+model calls. Intermediate `verified`, `final`, `release` and `validated` folders are
+preserved development observations, not repetitions of the final policy.
+
+Before broad deployment, independently adjudicate Q15 and expand repeated/held-out
+tests using the actual production stopping policy. Validate context savings and
+recovery benefit under matched conditions; the single-case scope correction does
+not establish those effects or a universal retrieval ceiling.
+
+### Code review — 16 November 2026
+
+The [V2 code review](V2_CODE_REVIEW.md) found and corrected defects in scope
+preservation, future-effective price handling, source-value validation across
+handoffs, unknown usage/cancellation accounting, generation-setting compatibility,
+evaluation replay/caches and CLI packaging. It also adds recoverable agent/evaluator
+source snapshots and the hash-pinned `requirements-research.lock` runtime.
+
+Validation in the pinned Python 3.11 environment: **457 tests passed, 2 skipped**;
+Ruff undefined-name/unused-import checks passed; the installed CLI passed an offline
+V2 dry run. No paid model calls were made. The two skips concern an obsolete Brotli
+backend incompatibility. Existing empirical results remain attached to their earlier
+code versions; they are not new measurements of this review revision.
+
+New improved runs include `agent_source.json`, manifest-covered code contents and
+hashes, plus generation settings in metadata. Agent source changes between stages
+stop a run. New evaluation plans include imported evaluator helper hashes and save
+`evaluation_source.json`. Completed evaluations require a fresh output directory;
+cached reports/metrics must match sealed artifacts and cached Reviewer predictions
+must retain their integrity hash. Earlier hash-only archives are not rewritten.
+
+## Workflow improvement roadmap
+
+Updated 15 November 2026. This roadmap applies to the Planner -> Researcher ->
+Analyst -> Reviewer workflow and its additive, one-cycle V2 recovery controller.
+It does not describe the separate beverage-news CrewAI workflow elsewhere in this
+repository. The implementation above puts the core controls into practice. The
+validation criteria below remain the acceptance plan: implementation and passing
+offline tests do not establish semantic quality, production savings or optimal limits.
+
+The existing structured handoffs, full-record citation provenance, cutoff checks,
+immutable initial artifacts, separate recovery measurements, and one-cycle limit
+provide a useful foundation. Improve reliability and evidence use before adding
+more agents or increasing research allowances.
+
+### Evidence behind the priorities
+
+The completed [request-threshold study](BUDGET_THRESHOLD_EVALUATION_README.md)
+tested six synthetic competitive-intelligence questions, three repetitions, and
+8/16/32 retrieval checkpoints. Three of eighteen Planner attempts failed, preventing
+research in those trajectories. Eleven Reviewer responses were invalid across the
+checkpoint observations. At the 32 ceiling, seven of eighteen observations had
+material-defect answers and three had no report. These groups are not necessarily
+disjoint and must not be added into a single failure rate.
+
+These observations identify problems in the frozen experimental workflow; they do
+not establish the failure rate of every production configuration. The experiment
+disabled V2 recovery and used a continuation policy different from the production
+Researcher's bootstrap and stopping policy. It therefore does not establish the
+benefit of recovery or validate a production default. Full results and limitations
+remain in the linked study README.
+
+### Priority 1: make Planner and Reviewer execution more reliable
+
+Tighten provider output schemas and supply allowed identifiers and enum values
+explicitly. Diagnose schema failures separately from HTTP failures, account/quota
+errors, and semantic defects. Preserve the existing provenance, scope and decision
+validation instead of relaxing checks to make a run complete.
+
+Consider one bounded repair attempt for malformed structured output, using the
+specific validation feedback and the original inputs. Do not treat a valid Reviewer
+FAIL as malformed output, retry until PASS, or retry quota/authentication failures
+as schema repairs. Record the initial invalid response, repair outcome, tokens,
+latency and cost; stop if the repair remains invalid.
+
+Validate with malformed-output fixtures and an independent repeated pilot. Compare
+first-attempt validity, eventual validity, complete-run rate and added cost, keeping
+failed attempts in the denominator. Completion alone does not prove answer quality.
+
+### Priority 2: strengthen Analyst reasoning and Reviewer detection
+
+For numerical comparisons, calculate arithmetic and unit conversions in code when
+the source inputs and their applicability are established. Preserve currency,
+billing basis, effective periods, eligibility and unknown values. Deterministic
+arithmetic cannot resolve conflicting or ambiguous sources by itself.
+
+Require strategic conclusions to identify their supporting observations, comparison
+criteria, assumptions and remaining uncertainty. Check narrative assertions as well
+as structured claims. More retrieved evidence must not be treated as proof that a
+ranking, price advantage or competitive threat is justified.
+
+The Reviewer controls recovery routing, so test it on source-audited correct reports
+and reports with deliberately inserted factual, temporal, numerical, citation and
+strategic errors. Measure material-error detection recall, issue precision, false
+rejections of valid answers, and valid structured-output rate separately. Reviewer
+PASS/FAIL must remain an internal observation, not the independent success label.
+Use independent judgments with private references inaccessible to agents, and retain
+human adjudication for uncertain cases.
+
+### Priority 3: target research at unanswered essential requirements
+
+Maintain an explicit coverage ledger linking each essential requirement to full
+records, unresolved conflicts and remaining evidence needs. Select the next retrieval
+to address a specific gap. After an empty search, reformulate or cautiously broaden
+the query rather than repeating the same unsuccessful operation. Reuse already
+retrieved records and detect duplicate operations while retaining an authoritative
+audit trail.
+
+Keep a maximum allowance, but permit early stopping when essential coverage is
+supported or no useful permitted retrieval remains. Distinguish completed coverage,
+budget exhaustion and unavailable evidence. Any new coverage or stopping heuristic
+requires validation; an agent's self-assessment is not ground truth.
+
+Compare this policy with the existing production policy under matched models,
+questions, corpus, cutoff and other limits. Measure supported requirement coverage,
+new useful full records per operation, empty/duplicate retrievals, material defects,
+cost and latency. Do not assume a vector index or larger allowance will improve these
+outcomes without a matched test.
+
+### Priority 4: budget the whole V2 workflow
+
+Introduce a run-wide allowance covering initial planning, research, analysis, review,
+any output repair, targeted recovery, revision and re-review. Recovery currently has
+its own retrieval limits; those limits do not bound total billed tokens, cost or
+elapsed time. Keep retrieval operations, model requests and tokens as separate
+measures.
+
+Check remaining token, estimated-cost and time allowances before stages and model
+requests, reserve resources for final analysis/review, and record the exact stopping
+reason and partial outputs. Use provider-supported output limits where applicable.
+A local pre-call estimate cannot guarantee an exact billed-dollar cap for an
+in-flight request; distinguish enforceable limits from estimates and possible
+overshoot. Unknown returned usage remains unknown and should prevent further spend
+when compliance with the allowance cannot be established.
+
+Verify exhaustion at initial and recovery stages, including repairs and failed
+requests. Report initial cost, incremental recovery cost and combined total without
+double-counting re-review or inherited baseline calls.
+
+### Priority 5: independently establish the value of V2 recovery
+
+Use the existing paired-continuation interface to compare each exact saved initial
+answer with its revised answer. Preserve baseline artifacts and verify compatibility;
+do not rerun the initial pipeline and call the result a paired comparison. Keep the
+same private reference and evaluation criteria for both answers. Include skipped,
+failed and unresolved recovery cases rather than selecting only successful revisions.
+
+Use the existing native MLflow evaluation approach with traced runs, registered
+independent scorers and private source-audited references. Measure material errors
+corrected, new errors introduced, remaining errors, supported completeness, citation
+support, execution success, and incremental tokens, requests, cost and latency.
+Record whether revise-only or research-then-revise was selected and whether that
+route addressed the actual defect. A change from internal FAIL to PASS is not enough
+to demonstrate improvement.
+
+Agree a practical quality tolerance and resource allowance before the experiment,
+then use repeated questions and held-out validation. Keep the single correction
+cycle until independent results justify a different recovery policy.
+
+### Priority 6: reduce context cost without losing important evidence
+
+Test smaller, question-relevant evidence contexts while retaining full original
+records for verification and audit. Use stable source IDs and exact supporting
+passages with sufficient surrounding context; preserve dates, units, corrections,
+supersession, contradictions and caveats. Avoid repeatedly serializing unnecessary
+retrieval history and duplicated source text into model inputs. Keep full logs in
+artifacts even when they are omitted from a prompt.
+
+Cache reusable public retrieval results using corpus/version and cutoff-aware keys.
+Never reuse stale evidence across incompatible cutoffs or datasets. Application
+caching and provider prompt caching are different mechanisms; measure their actual
+token, latency and cost effects rather than assuming either guarantees savings.
+
+Compare reduced and full contexts on the same questions. Accept the change only if
+it meets predeclared quality/error tolerances, including cases where a correction or
+caveat appears outside the initially selected passage. Track cost and human review
+time per independently approved report alongside per-attempt model cost; report
+undefined denominators when no reports are approved.
+
+### Implementation order and budget recommendation
+
+First fix execution failures and strengthen Analyst/Reviewer checks. Next establish
+whether the existing bounded recovery improves independently assessed answers.
+Then optimize retrieval and context size through matched comparisons. Add run-wide
+budget controls before expanding live usage. Version and evaluate changes separately
+so benefits can be attributed to the relevant change.
+
+Retain **32 as a provisional ceiling only for the tested experimental continuation
+policy**. The study does not prove a universal optimum, a token limit, or the benefit
+of V2 recovery. It did not establish 16 as quality-equivalent to 32. Validate the
+actual production stopping policy on held-out questions before changing defaults;
+validate live article retrieval separately before transferring the result to a real
+news corpus. This roadmap does not change the existing runtime defaults.

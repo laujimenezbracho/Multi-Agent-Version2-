@@ -7,7 +7,7 @@ Cross-artifact citation checks against retrieved evidence belong to the controll
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, model_validator,field_validator
 
 Text = Annotated[str, Field(min_length=1, pattern=r"\S")]
 Score = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
@@ -38,6 +38,7 @@ class ResearchTask(Contract):
     categories: list[Text] = Field(default_factory=list)
     time_scope: Text = Field(description="Explicit natural-language time period and relevant date semantics")
     evidence_requirements: list[Text] = Field(default_factory=list)
+    priority: Literal['essential', 'optional'] = 'essential'
 
 
 class ResearchPlan(Contract):
@@ -47,11 +48,23 @@ class ResearchPlan(Contract):
     tasks: list[ResearchTask] = Field(min_length=1)
     expected_answer_elements: list[Text] = Field(default_factory=list)
     comparison_dimensions: list[Text] = Field(default_factory=list)
+    optional_context: list[Text] = Field(default_factory=list,
+        description='Useful enrichment that must not become a requirement for answering the original question.')
 
     @model_validator(mode="after")
     def unique_tasks(self):
         _unique([task.task_id for task in self.tasks], "task IDs")
         return self
+
+
+class PricingObservation(Contract):
+    """Verbatim structured source assertions; never a canonical current price."""
+    plan: Text | None = None
+    amount: Annotated[str, Field(pattern=r"^\d+(?:\.\d+)?$")] | None = None
+    currency: Text | None = None
+    billing_frequency: Text | None = None
+    price_basis: Text | None = None
+    seat_minimum: TokenCount | None = None
 
 
 class EvidenceItem(Contract):
@@ -73,6 +86,7 @@ class EvidenceItem(Contract):
     end_date: UTCTimestamp | None = None
     verification_status: Text | None = None
     feature_status: Text | None = None
+    pricing_observation: PricingObservation | None = None
 
 
 class TaskCoverage(Contract):
@@ -115,6 +129,15 @@ class ReportClaim(Contract):
         return self
 
 
+class FactualClaim(ReportClaim):
+    claim_type:Literal['factual']
+    supporting_record_ids:list[Text]=Field(min_length=1)
+
+
+class InferenceClaim(ReportClaim):
+    claim_type:Literal['inference']
+
+
 class CompetitiveReport(Contract):
     question: Text
     as_of: UTCTimestamp
@@ -123,8 +146,17 @@ class CompetitiveReport(Contract):
     competitor_comparison: list[Text] = Field(default_factory=list)
     strategic_implications: list[Text] = Field(default_factory=list)
     limitations: list[Text] = Field(default_factory=list)
-    claims: list[ReportClaim] = Field(default_factory=list)
+    claims: list[FactualClaim|InferenceClaim] = Field(default_factory=list)
     sources: list[Text] = Field(default_factory=list, description="Source record IDs, not URLs")
+
+    @field_validator('claims',mode='before')
+    @classmethod
+    def validate_legacy_claim_construction(cls,values):
+        # Preserve public Python construction through ReportClaim while the API
+        # schema now encodes minItems=1 specifically for factual claims.
+        if isinstance(values,list):
+            return [value.model_dump() if isinstance(value,ReportClaim) else value for value in values]
+        return values
 
     @model_validator(mode="after")
     def validate_claims(self):

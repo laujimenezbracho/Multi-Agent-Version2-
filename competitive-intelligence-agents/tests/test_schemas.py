@@ -153,7 +153,7 @@ def test_invalid_categories_and_metrics(examples, index, field, value):
 def test_nested_validation(examples):
     payload = examples[-1].model_dump()
     payload["final_report"]["claims"][0]["confidence"] = 2
-    with pytest.raises(ValidationError, match="final_report.claims.0.confidence"):
+    with pytest.raises(ValidationError, match=r"final_report.claims.0.*confidence"):
         RunResult.model_validate(payload)
     payload = examples[4].model_dump()
     payload["evidence_items"][0]["available_at"] = "2026-11-12T00:00:00Z"

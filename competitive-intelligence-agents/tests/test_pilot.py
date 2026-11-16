@@ -47,9 +47,13 @@ def fake_agents(monkeypatch):
         item = EvidenceItem(record_id=row["record_id"], claim_id=row["claim_id"], company_name=row["company_name"],
             finding=row["summary"], quoted_or_paraphrased_evidence=row["details"], source_title=row["document_title"],
             source_type=row["source_type"], source_url=row["source_url"], published_at=row["published_at"],
-            available_at=row["available_at"], effective_date=row["effective_date"], confidence=0.7)
+            available_at=row["available_at"], effective_date=row["effective_date"], confidence=0.7,
+            end_date=row.get('end_date'),source_independence_group=row.get('source_independence_group'),
+            supersedes_record_id=row.get('supersedes_record_id'),verification_status=row.get('verification_status'),
+            feature_status=row.get('feature_status'))
         return EvidencePack(original_question=plan.original_question, as_of=plan.as_of, evidence_items=[item],
-                            missing_information=["Only one source in this mocked scenario"])
+                            missing_information=["Only one source in this mocked scenario"],
+                            retrieval_log=[json.dumps({'tool':'get_record','status':'ok','record_ids':[row['record_id']]})])
     async def analyst(plan, evidence):
         state["order"].append(("analyst", plan.original_question))
         return CompetitiveReport(question=plan.original_question, as_of=plan.as_of,

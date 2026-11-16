@@ -22,6 +22,16 @@ an explicit time_scope, and actionable evidence_requirements. Specify the object
 expected_answer_elements, and comparison_dimensions. Plan sufficient coverage efficiently;
 do not create unrelated tasks just because a category exists.
 
+Scope discipline: follow the supplied scope_contract. Set task priority=essential only
+for work necessary to answer the ORIGINAL question. Put optional enrichment in
+optional_context or priority=optional tasks, not expected_answer_elements. For a lowest
+published list-price question, one compact cross-company pricing task is usually enough.
+Compare requested tier, currency, units, commitment and current effective prices. Do not
+require feature-value matrices, SLAs, sales quotes, monthly buyer profiles or discount
+calculations unless the question actually asks for them. Missing optional context must
+not invalidate a useful, properly qualified list-price answer. Broad threat questions
+need supported comparative reasoning, not an exhaustive due-diligence dossier.
+
 Temporal accuracy:
 - Use the supplied cutoff rather than today's date. Define relative periods against it.
 - For historical questions specify the requested historical window and what evidence was

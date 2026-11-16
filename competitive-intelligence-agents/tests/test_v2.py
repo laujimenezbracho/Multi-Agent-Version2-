@@ -151,6 +151,101 @@ def paired(settings,directory,run_id="v2-test"):
     return asyncio.run(v2.run_pipeline_v2(baseline_dir=directory,run_id=run_id,settings=settings))
 
 
+@pytest.mark.parametrize('change',[{'reasoning_effort':'low'},{'max_output_tokens':4000}])
+def test_paired_generation_settings_cannot_silently_change(settings,baseline_factory,change):
+    directory=baseline_factory[0](decision='PASS')
+    with pytest.raises(ValueError,match='generation settings'):
+        load_baseline(directory,replace(settings,**change),CUTOFF)
+
+
+def test_recovery_rejects_changed_structured_price_before_analyst(settings,baseline_factory,recovery_stages,monkeypatch):
+    from ci_agents.source_observations import pricing_observation
+    directory=baseline_factory[0]()
+    original=v2.researcher.side_effect
+    async def changed_price(*args,**kwargs):
+        output=await original(*args,**kwargs)
+        rows={row['record_id']:row for row in load_dataset(PUBLIC).records}
+        item=output.evidence_items[0]
+        item.pricing_observation=pricing_observation(rows[item.record_id])
+        item.pricing_observation.amount='999999'
+        return output
+    monkeypatch.setattr(v2,'researcher',AsyncMock(side_effect=changed_price))
+    result=paired(settings,directory)
+    assert result.execution_status=='execution_failed'
+    assert recovery_stages.order==['researcher']
+    v2.analyst.assert_not_called();v2.reviewer.assert_not_called()
+    verify_manifest(result.artifact_directory)
+
+
+def test_initial_handoff_rejects_changed_structured_price(settings,baseline_factory,monkeypatch):
+    from ci_agents.schemas import PricingObservation
+    original=pipeline.researcher.side_effect
+    async def changed_price(*args,**kwargs):
+        output=await original(*args,**kwargs)
+        output.evidence_items[0].pricing_observation=PricingObservation(amount='999999')
+        return output
+    monkeypatch.setattr(pipeline,'researcher',AsyncMock(side_effect=changed_price))
+    result=asyncio.run(pipeline.run_pipeline(QUESTION,CUTOFF,'bad-price-handoff',settings=settings))
+    assert result.execution_status=='execution_failed'
+    pipeline.analyst.assert_not_called();pipeline.reviewer.assert_not_called()
+
+
+def test_signed_baseline_still_requires_source_correct_prices(settings,baseline_factory):
+    from ci_agents.persistence import canonical_json
+    from hashlib import sha256
+    directory=baseline_factory[0](decision='PASS')
+    path=directory/'evidence_pack.json'
+    pack=json.loads(path.read_text())
+    from ci_agents.schemas import PricingObservation
+    pack['evidence_items'][0]['pricing_observation']=PricingObservation(amount='999999').model_dump()
+    path.write_text(canonical_json(pack)+'\n')
+    manifest_path=directory/'manifest.json';manifest=json.loads(manifest_path.read_text())
+    manifest['artifact_fingerprints']['evidence_pack.json']=sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(canonical_json(manifest)+'\n')
+    verify_manifest(directory)
+    with pytest.raises(ValueError,match='Structured pricing'):
+        load_baseline(directory,settings,CUTOFF)
+
+
+def test_invalid_improvement_flag_is_rejected_before_any_stage(settings,monkeypatch):
+    initial=AsyncMock();monkeypatch.setattr(pipeline,'run_pipeline',initial)
+    with pytest.raises(TypeError,match='boolean'):
+        asyncio.run(v2.run_pipeline_v2(QUESTION,CUTOFF,settings=settings,enable_improvements='false'))
+    initial.assert_not_called()
+
+
+def test_cancelled_initial_stage_is_never_recorded_as_success(settings,baseline_factory,monkeypatch):
+    async def cancel(*args):raise asyncio.CancelledError()
+    monkeypatch.setattr(pipeline,'planner',AsyncMock(side_effect=cancel))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(pipeline.run_pipeline(QUESTION,CUTOFF,'cancelled-initial',settings=settings))
+    metrics=json.loads((settings.runs_dir/'cancelled-initial'/'planner_metrics.json').read_text())
+    assert metrics['status']=='failed' and metrics['error_type']=='CancelledError'
+
+
+def test_cancelled_recovery_stage_is_never_recorded_as_success(settings,baseline_factory,recovery_stages,monkeypatch):
+    directory=baseline_factory[0]()
+    async def cancel(*args,**kwargs):raise asyncio.CancelledError()
+    monkeypatch.setattr(v2,'researcher',AsyncMock(side_effect=cancel))
+    with pytest.raises(asyncio.CancelledError):paired(settings,directory)
+    metrics=json.loads((settings.runs_dir/'v2-test'/'recovery_researcher_metrics.json').read_text())
+    assert metrics['status']=='failed' and metrics['error_type']=='CancelledError'
+
+
+def test_expired_invocation_budget_preserves_baseline_and_stop_reason(settings,baseline_factory,recovery_stages):
+    from ci_agents.workflow_runtime import RunBudget
+    directory=baseline_factory[0]()
+    result=asyncio.run(v2.run_pipeline_v2(baseline_dir=directory,run_id='budget-stop',settings=settings,
+        budget=RunBudget(max_seconds=.000000001)))
+    assert result.execution_status=='execution_failed' and not recovery_stages.order
+    output=Path(result.artifact_directory)
+    assert json.loads((output/'error.json').read_text())['stop_reason']=='time_limit'
+    assert (output/'initial_report.json').exists()
+    state=json.loads((output/'workflow_budget.json').read_text())
+    assert state['requests_dispatched']==0
+    verify_manifest(output)
+
+
 def test_initial_pass_skips_every_recovery_stage(settings,baseline_factory,recovery_stages):
     build,state,_=baseline_factory;directory=build(decision="PASS")
     result=paired(settings,directory)

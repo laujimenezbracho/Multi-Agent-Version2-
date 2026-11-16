@@ -15,12 +15,16 @@ dependencies = [
     "pandas",
     "reportlab>=4,<6",
     "python-dotenv",
+    "httpx>=0.28,<1",
     "pytest",
     "pytest-mock",
 ]
 
 [project.optional-dependencies]
 test = ["pymupdf>=1.24"]
+
+[project.scripts]
+ci-agents = "ci_agents.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

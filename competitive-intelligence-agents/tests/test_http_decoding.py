@@ -114,13 +114,20 @@ def test_each_agent_configures_only_supported_compression(name, monkeypatch):
     monkeypatch.setattr(module, "AsyncOpenAI", factory)
     monkeypatch.setattr(module.Runner, "run", AsyncMock(side_effect=RuntimeError("Mocked stop before any API")))
     plan = ResearchPlan(original_question="Offline test", as_of="2026-11-11T23:59:59Z", objective="Collect evidence",
-                        tasks=[ResearchTask(task_id="T1", research_question="Offline test", time_scope="At cutoff")])
-    pack = EvidencePack(original_question=plan.original_question, as_of=plan.as_of)
+                        tasks=[ResearchTask(task_id="T1", research_question="Offline test", time_scope="At cutoff",companies=['NexaFlow'],categories=['Pricing'])])
+    from ci_agents.agents.researcher import ResearchSession,ResearcherLimits,ResearchOutcome
+    from ci_agents.dataset import load_dataset
+    from ci_agents.retrieval import RetrievalStore
+    service=RetrievalStore(load_dataset(settings.data_dir))
+    session=ResearchSession(plan,service,ResearcherLimits())
+    session.invoke('get_record',{'record_id':'WEB-00001'})
+    pack=session.assemble(ResearchOutcome(stop_reason='sufficient_for_question'))
     report = CompetitiveReport(question=plan.original_question, as_of=plan.as_of, executive_summary="No evidence")
-    arguments = {"planner": (plan.original_question, plan.as_of), "researcher": (plan, Mock()),
+    arguments = {"planner": (plan.original_question, plan.as_of), "researcher": (plan, service),
                  "analyst": (plan, pack), "reviewer": (plan, pack, report)}
     with use_settings(settings), pytest.raises(RuntimeError):
         asyncio.run(getattr(module, name)(*arguments[name]))
+    service.close()
     assert captured[0]["default_headers"] == {"Accept-Encoding": "gzip, deflate"}
     assert captured[0]["max_retries"] == 0
     module.Runner.run.assert_awaited_once()

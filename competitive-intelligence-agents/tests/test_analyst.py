@@ -217,7 +217,24 @@ def test_missing_information_allows_explicit_abstention(sdk):
     sdk.return_value = SimpleNamespace(final_output=report)
     result = run(plan, evidence)
     assert result.claims == [] and result.sources == []
-    assert "Insufficient" in result.executive_summary
+    assert "Unable to answer" in result.executive_summary
+    sdk.assert_not_awaited()
+
+
+def test_factual_citation_requirement_is_in_generated_api_schema():
+    # Regression for the actual rejected Analyst response: process/missing-data
+    # statements were tagged factual with [] citations. The provider must now
+    # enforce this rule too, rather than discovering it only after generation.
+    from ci_agents.schemas import FactualClaim,InferenceClaim
+    schema=AgentOutputSchema(CompetitiveReport).json_schema()
+    factual=schema['$defs']['FactualClaim']
+    assert factual['properties']['supporting_record_ids']['minItems']==1
+    assert factual['properties']['claim_type']['const']=='factual'
+    assert schema['$defs']['InferenceClaim']['properties']['claim_type']['const']=='inference'
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        FactualClaim(claim_id='C1',claim_type='factual',text='No records were supplied.',supporting_record_ids=[],confidence=.5)
+    assert InferenceClaim(claim_id='C1',claim_type='inference',text='Evidence is insufficient.',supporting_record_ids=[],confidence=.5)
 
 
 @pytest.mark.parametrize("field", ["question", "as_of"])

@@ -40,6 +40,18 @@ def main(argv=None):
     v2.add_argument("--recovery-max-tool-calls", type=int, default=20)
     v2.add_argument("--recovery-max-full-records", type=int, default=15)
     v2.add_argument("--recovery-max-evidence-items", type=int, default=15)
+    v2.add_argument("--legacy-policy", action="store_true", help="Use original V2 behavior without reliability improvements")
+    v2.add_argument("--initial-max-tool-calls", type=int, default=60)
+    v2.add_argument("--max-total-tokens", type=int)
+    v2.add_argument("--max-estimated-cost", type=float)
+    v2.add_argument("--max-seconds", type=float)
+    v2.add_argument("--max-model-requests", type=int)
+    v2.add_argument("--reserve-final-tokens", type=int, default=0)
+    v2.add_argument("--max-output-tokens", type=int, default=8000)
+    v2.add_argument("--input-usd-per-million", type=float)
+    v2.add_argument("--output-usd-per-million", type=float)
+    v2.add_argument("--pricing-source")
+    v2.add_argument("--pricing-date")
     pdf = sub.add_parser("report", help="Generate a two-page PDF offline from a completed run")
     pdf.add_argument("--run-dir", required=True)
     args = parser.parse_args(argv)
@@ -125,12 +137,25 @@ def _v2_main(parser, args):
     from .v2_baseline import load_baseline
     from .recovery import select_action
     from .telemetry import redact_text
+    from .telemetry import PricingConfig
+    from .workflow_runtime import WorkflowPolicy, RunBudget, WorkflowRuntime
     try:
         settings = load_config(require_api_key=not args.dry_run)
         cutoff = _date(args.as_of) if args.as_of else settings.evaluation_cutoff
         limits = ResearcherLimits(max_tool_calls=args.recovery_max_tool_calls,
             max_full_records=args.recovery_max_full_records, max_evidence_items=args.recovery_max_evidence_items,
             max_search_results=10)
+        initial_limits = ResearcherLimits(max_tool_calls=args.initial_max_tool_calls)
+        policy = WorkflowPolicy(max_output_tokens=args.max_output_tokens)
+        budget = RunBudget(max_total_tokens=args.max_total_tokens, max_estimated_cost=args.max_estimated_cost,
+            max_seconds=args.max_seconds, max_model_requests=args.max_model_requests,
+            reserve_final_tokens=args.reserve_final_tokens)
+        if args.legacy_policy and any((args.max_total_tokens, args.max_estimated_cost, args.max_seconds, args.max_model_requests)):
+            raise ValueError('Run-wide budgets require improved V2')
+        rates = None
+        if args.input_usd_per_million is not None or args.output_usd_per_million is not None:
+            rates = PricingConfig(model=settings.openai_model, source=args.pricing_source, source_date=args.pricing_date,
+                input_usd_per_million=args.input_usd_per_million, output_usd_per_million=args.output_usd_per_million)
         if args.run_id is not None:
             validate_run_id(args.run_id)
             if (settings.runs_dir / args.run_id).exists():
@@ -138,6 +163,7 @@ def _v2_main(parser, args):
         question, qid, preview = None, None, None
         if args.baseline_dir:
             baseline = load_baseline(args.baseline_dir, settings, cutoff)
+            if rates is None: rates = PricingConfig.model_validate(baseline.metadata['pricing'])
             preview = {"baseline_run_id": baseline.result.run_id, **select_action(baseline.review).as_dict()}
         else:
             data = load_dataset(settings.data_dir)
@@ -150,13 +176,20 @@ def _v2_main(parser, args):
                 question = args.question
             validate_request(question, cutoff)
             prompt_fingerprints()
+        if not args.legacy_policy:
+            WorkflowRuntime(policy, budget, rates or PricingConfig(model=settings.openai_model))
         print(redact_text(json.dumps({"architecture": "v2_bounded", "dry_run": args.dry_run,
             "model": settings.openai_model, "as_of": cutoff.isoformat(), "baseline": preview,
-            "recovery_limits": limits.model_dump(), "max_recovery_cycles": 1}), (settings.openai_api_key,)), flush=True)
+            "recovery_limits": limits.model_dump(), "max_recovery_cycles": 1,
+            "workflow_policy": None if args.legacy_policy else policy.model_dump(),
+            "run_budget": None if args.legacy_policy else budget.model_dump(),
+            "initial_research_limits": initial_limits.model_dump()}), (settings.openai_api_key,)), flush=True)
         if args.dry_run:
             return 0
         result = asyncio.run(run_pipeline_v2(question, cutoff, args.run_id, baseline_dir=args.baseline_dir,
-                            question_id=qid, settings=settings, recovery_limits=limits))
+                            question_id=qid, settings=settings, recovery_limits=limits, pricing=rates,
+                            initial_research_limits=initial_limits, enable_improvements=not args.legacy_policy,
+                            policy=policy, budget=None if args.legacy_policy else budget))
         print(json.dumps({"run_id": result.run_id, "status": result.execution_status,
                           "final_reviewer_decision": result.review_result.decision if result.review_result else None}))
         return 1 if result.execution_status == "execution_failed" else 0
